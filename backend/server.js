@@ -1,4 +1,5 @@
 const express = require('express');
+const { BlobServiceClient } = require('@azure/storage-blob');
 const path = require('path');
 const mongoose = require('mongoose');
 const app = express();
@@ -64,6 +65,33 @@ app.put('/api/tasks/:id', async (req, res) => {
 app.delete('/api/tasks/:id', async (req, res) => {
     await Task.findByIdAndDelete(req.params.id);
     res.status(204).send();
+});
+
+// GET /api/export - Exporter les tâches vers Azure Blob Storage
+app.get('/api/export', async (req, res) => {
+    try {
+        const connStr = process.env.AZURE_STORAGE_CONNECTION_STRING;
+        if (!connStr) return res.status(500).send("Stockage Azure non configuré.");
+
+        const blobServiceClient = BlobServiceClient.fromConnectionString(connStr);
+        const containerClient = blobServiceClient.getContainerClient('exports');
+
+        const tasks = await Task.find({});
+        const data = JSON.stringify(tasks, null, 2);
+
+        const blobName = `mes-taches-${Date.now()}.json`;
+        const blockBlobClient = containerClient.getBlockBlobClient(blobName);
+
+        await blockBlobClient.upload(data, data.length);
+        
+        res.json({ 
+            message: "Export réussi dans Blob Storage !", 
+            fichier: blobName 
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).send("Erreur lors de l'export.");
+    }
 });
 
 const frontendDistPath = path.join(__dirname, '../frontend/dist');
